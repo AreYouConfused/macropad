@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 hidapi = "2.6.1"
+mouse-keyboard-input = "0.8.1"

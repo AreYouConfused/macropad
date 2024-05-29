@@ -1,4 +1,9 @@
+use std::{process::{Output, Command}, vec};
+
 use hidapi::{HidApi, HidDevice, HidResult};
+
+use mouse_keyboard_input::VirtualDevice;
+use mouse_keyboard_input::key_codes::{KEY_F23, KEY_F24};
 
 const VENDOR_ID: u16 = 0xd010;
 const PRODUCT_ID: u16 = 0x1601;
@@ -54,18 +59,18 @@ fn main() {
         }
     };
 
-    let mute_status = run_cmd("pamixer --default-source --get-mute");
-    let mute = mute_status.trim() == "true";
-    let mut data = vec![0x00; REPORT_LENGTH];
-    data[0] = 2;
-    data[1] = if mute { 1 } else { 0 };
-    send_raw_report(&interface, &data).unwrap();
+    let mut vdev = VirtualDevice::default().unwrap();
 
-    let volume_status = run_cmd("pamixer --get-volume");
-    let mut data = vec![0x00; REPORT_LENGTH];
-    data[0] = 3;
-    data[1] = volume_status.trim().parse().unwrap();
-    send_raw_report(&interface, &data).unwrap();
+    send_raw_report(&interface, &vec![
+        2, 
+        if run_cmd_block("pamixer --default-source --get-mute").trim() == "true"
+            { 1 } else { 0 },
+    ]).unwrap();
+
+    send_raw_report(&interface, &vec![
+        3, 
+        run_cmd_block("pamixer --get-volume").trim().parse().unwrap(),
+    ]).unwrap();
 
     loop {
         let mut response = [0u8; REPORT_LENGTH];
@@ -77,43 +82,39 @@ fn main() {
         match layer {
             0 => match key {
                 'M' => {
-                    run_cmd("ydotool key 97:1 231:1 231:0 97:0");
+                    vdev.click(KEY_F23).unwrap();
                 }
                 'N' => {
-                    run_cmd("ydotool key 97:1 232:1 232:0 97:0");
+                    vdev.click(KEY_F24).unwrap();
                 }
                 'T' => {
                     run_cmd("pamixer -d 1");
-                    let volume_status = run_cmd("pamixer --get-volume");
-                    let mut data = vec![0x00; REPORT_LENGTH];
-                    data[0] = 3;
-                    data[1] = volume_status.trim().parse().unwrap();
-                    send_raw_report(&interface, &data).unwrap();
+                    send_raw_report(&interface, &vec![
+                        3, 
+                        run_cmd_block("pamixer --get-volume").trim().parse().unwrap(),
+                    ]).unwrap();
                 }
                 'U' => {
                     run_cmd("pamixer -t");
-                    let volume_status = run_cmd("pamixer --get-volume");
-                    let mut data = vec![0x00; REPORT_LENGTH];
-                    data[0] = 3;
-                    data[1] = volume_status.trim().parse().unwrap();
-                    send_raw_report(&interface, &data).unwrap();
+                    send_raw_report(&interface, &vec![
+                        3, 
+                        run_cmd_block("pamixer --get-volume").trim().parse().unwrap(),
+                    ]).unwrap();
                 }
                 'V' => {
                     run_cmd("pamixer -i 1");
-                    let volume_status = run_cmd("pamixer --get-volume");
-                    let mut data = vec![0x00; REPORT_LENGTH];
-                    data[0] = 3;
-                    data[1] = volume_status.trim().parse().unwrap();
-                    send_raw_report(&interface, &data).unwrap();
+                    send_raw_report(&interface, &vec![
+                        3, 
+                        run_cmd_block("pamixer --get-volume").trim().parse().unwrap(),
+                    ]).unwrap();
                 }
                 'P' => {
                     run_cmd("pamixer --default-source -t");
-                    let mute_status = run_cmd("pamixer --default-source --get-mute");
-                    let mute = mute_status.trim() == "true";
-                    let mut data = vec![0x00; REPORT_LENGTH];
-                    data[0] = 2;
-                    data[1] = if mute { 1 } else { 0 };
-                    send_raw_report(&interface, &data).unwrap();
+                    send_raw_report(&interface, &vec![
+                        2, 
+                        if run_cmd_block("pamixer --default-source --get-mute").trim() == "true"
+                            { 1 } else { 0 },
+                    ]).unwrap();
                 }
                 'Q' => {
                     run_cmd("$HOME/.local/bin/spotifyvolume down");
@@ -121,17 +122,17 @@ fn main() {
                 'R' => {
                     run_cmd("$HOME/.local/bin/spotifyvolume up");
                 }
-                'W' | 'B' => {
+                'B' => {
                     run_cmd("playerctl --ignore-player=firefox play-pause");
                 }
-                'Y' | 'C' => {
+                'C' => {
                     run_cmd("playerctl --ignore-player=firefox next");
                 }
-                'X' | 'A' => {
+                'A' => {
                     run_cmd("playerctl --ignore-player=firefox previous");
                 }
                 'D' => {
-                    run_cmd("hyprctl clients | grep Spotify > /dev/null && hyprctl dispatch togglespecialworkspace music || hyprctl dispatch exec spotify --disable-smooth-scrolling");
+                    run_cmd("hyprctl clients | grep Spotify && hyprctl dispatch togglespecialworkspace music || hyprctl dispatch exec -- spotify --disable-smooth-scrolling");
                 }
                 _ => {}
             },
@@ -140,12 +141,16 @@ fn main() {
     }
 }
 
-fn run_cmd(command: &str) -> String {
-    use std::process::Command;
-    let output = Command::new("sh")
+fn run_cmd(command: &str) -> Output {
+    Command::new("sh")
         .arg("-c")
         .arg(command)
         .output()
-        .expect("failed to execute process");
+        .expect("failed to execute process")
+    //String::from_utf8_lossy(&output.stdout).to_string()
+}
+
+fn run_cmd_block(command: &str) -> String {
+    let output = run_cmd(command);
     String::from_utf8_lossy(&output.stdout).to_string()
 }
